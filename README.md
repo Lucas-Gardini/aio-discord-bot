@@ -6,7 +6,7 @@
   </a>
 </p>
 
-> Simples discord bot that does everything a server needs
+> Simple discord bot that does everything a server needs
 
 ## Install
 

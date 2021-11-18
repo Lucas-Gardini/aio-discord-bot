@@ -10,6 +10,10 @@ const youtubeManager = new YoutubeManager();
 let connection: VoiceConnection = null;
 let video: any = null;
 
+Player.on(AudioPlayerStatus.Idle, async () => {
+	play(await download(getNextMusic(true)));
+});
+
 function connect(interaction: ExtendedInteraction) {
 	if (!connection) {
 		connection = joinVoiceChannel({
@@ -35,10 +39,6 @@ export async function download(video) {
 
 export async function play(music_path: string) {
 	Player.play(newAudioResource(`${__dirname}/../../resources/${music_path}.mp3`));
-
-	Player.on(AudioPlayerStatus.Idle, async () => {
-		play(await download(getNextMusic(true)));
-	});
 }
 
 export function getNextMusic(cameFromHandler: boolean): string {
@@ -75,11 +75,11 @@ function getCurrentMusic() {
 	return null;
 }
 
-function getPreviousMusic() {
+export function getPreviousMusic() {
 	const { queue } = JSON.parse(readFileSync(`${__dirname}/queue.json`).toString());
 	// loop array of objects and find index of playing: true
 	const index = queue.findIndex(({ playing }) => playing);
-	if (index > 0) return queue[index];
+	if (index > 0) return queue[index - 1];
 	return null;
 }
 
@@ -98,48 +98,56 @@ export default new Command({
 		{ name: "query", description: "Pesquisa do Youtube (link ou frase)", type: "STRING", required: true },
 	],
 	run: async ({ interaction }) => {
-		const query = interaction.options.getString("query");
+		try {
+			const query = interaction.options.getString("query");
+			console.log(`Usuário ${interaction.user.username} pesquisou por "${query}"`);
 
-		let isPlaylist = false;
-		let playlist: Result;
+			let isPlaylist = false;
+			let playlist: Result;
 
-		if (query.includes("watch?v=")) {
-			isPlaylist = false;
-			video = await youtubeManager.getDetails(query.split("watch?v=")[1]);
-			video.id = query.split("watch?v=")[1];
-		} else if (query.includes("playlist?list=")) {
-			isPlaylist = true;
-			playlist = await youtubeManager.getPlaylist(query.split("playlist?list=")[1]);
-		} else {
-			isPlaylist = false;
-			video = (await youtubeManager.search(query)).videos[0];
-		}
-		!isPlaylist && interaction.followUp(`Adicionado a fila: ${video.title}`);
-
-		if (isPlaylist) {
-			const { queue } = JSON.parse(readFileSync(`${__dirname}/queue.json`).toString());
-			for (video of playlist.items) {
-				queue.push({
-					id: video.id,
-					title: video.title,
-					playing: false,
-				});
+			if (query.includes("watch?v=")) {
+				isPlaylist = false;
+				video = await youtubeManager.getDetails(query.split("watch?v=")[1]);
+				video.id = query.split("watch?v=")[1];
+			} else if (query.includes("playlist?list=")) {
+				isPlaylist = true;
+				playlist = await youtubeManager.getPlaylist(query.split("playlist?list=")[1]);
+			} else {
+				isPlaylist = false;
+				video = (await youtubeManager.search(query)).videos[0];
 			}
-			writeFileSync(`${__dirname}/queue.json`, JSON.stringify({ queue }));
-			interaction.followUp(`Adicionado a playlist ${playlist.title} a fila`);
-		} else {
-			const { queue } = JSON.parse(readFileSync(`${__dirname}/queue.json`).toString());
-			queue.push({ title: video.title, id: video.id, playing: false });
-			writeFileSync(`${__dirname}/queue.json`, JSON.stringify({ queue }));
+			!isPlaylist && interaction.followUp(`Adicionado a fila: ${video.title}`);
+
+			if (isPlaylist) {
+				const { queue } = JSON.parse(readFileSync(`${__dirname}/queue.json`).toString());
+				for (video of playlist.items) {
+					queue.push({
+						id: video.id,
+						title: video.title,
+						playing: false,
+					});
+				}
+				writeFileSync(`${__dirname}/queue.json`, JSON.stringify({ queue }));
+				interaction.followUp(`Adicionado a playlist ${playlist.title} a fila`);
+			} else {
+				const { queue } = JSON.parse(readFileSync(`${__dirname}/queue.json`).toString());
+				queue.push({ title: video.title, id: video.id, playing: false });
+				writeFileSync(`${__dirname}/queue.json`, JSON.stringify({ queue }));
+			}
+
+			if (!connection) {
+				connect(interaction);
+			}
+
+			if (thereIsAMusicPlaying()) return;
+			await play(await download(getNextMusic(false)));
+
+			connection.subscribe(Player);
+		} catch (error) {
+			console.log(error);
+			try {
+				interaction.followUp(error);
+			} catch (error) {}
 		}
-
-		if (!connection) {
-			connect(interaction);
-		}
-
-		if (thereIsAMusicPlaying()) return;
-		await play(await download(getNextMusic(false)));
-
-		connection.subscribe(Player);
 	},
 });
