@@ -28,7 +28,12 @@ export class YoutubeManager {
 	}
 
 	async getDetails(videoId: string) {
-		return await this.youtube.getDetails(videoId);
+		const video = await this.search(videoId);
+		try {
+			return await this.youtube.getDetails(video.videos[0].id);
+		} catch (error) {
+			return error;
+		}
 	}
 
 	async getPlaylist(playlistId: string): Promise<Result> {
@@ -38,29 +43,45 @@ export class YoutubeManager {
 	download({ videoId, title, type, format }): Promise<string> {
 		title = slugify(title, { strict: true });
 		return new Promise((resolve, reject) => {
-			const stream = this.youtube.download(videoId, {
-				type: type,
-			});
+			try {
+				const stream = this.youtube.download(videoId, {
+					type: "audio",
+					// format: "mp3",
+				});
 
-			// check if ./src/resources folder exists, if not, create it
-			if (!existsSync("./src/resources")) {
-				mkdirSync("./src/resources");
+				// check if ./src/resources folder exists, if not, create it
+				if (!existsSync("./src/resources")) {
+					mkdirSync("./src/resources");
+				}
+
+				stream.pipe(createWriteStream(`./src/resources/${title}.${format}`));
+
+				stream.on("start", () => {
+					console.log(
+						chalk.red("\n[YOUTUBE MANAGER]") + ` Started downloading ${chalk.underline(title)}`
+					);
+				});
+
+				stream.on("progress", (info) => {
+					process.stdout.clearLine(1);
+					process.stdout.cursorTo(0);
+					process.stdout.write(
+						`[YOUUTBE MANAGER] Downloaded ${info.percentage}% (${info.downloaded_size}MB) of ${info.size}MB`
+					);
+				});
+
+				stream.on("end", () => {
+					console.log(chalk.red("\n[YOUTUBE MANAGER] ") + chalk.underline("Done!"));
+					resolve(title);
+				});
+
+				stream.on("error", (err) => {
+					console.log(err);
+					resolve("false");
+				});
+			} catch (error) {
+				resolve(error);
 			}
-
-			stream.pipe(createWriteStream(`./src/resources/${title}.${format}`));
-
-			stream.on("start", () => {
-				console.log(
-					chalk.red("\n[YOUTUBE MANAGER]") + ` Started downloading ${chalk.underline(title)}`
-				);
-			});
-
-			stream.on("end", () => {
-				console.log(chalk.red("\n[YOUTUBE MANAGER] ") + chalk.underline("Done!"));
-				resolve(title);
-			});
-
-			stream.on("error", (err) => reject(err));
 		});
 	}
 
